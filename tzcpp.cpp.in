@@ -1,0 +1,154 @@
+#include <cctype>
+#include <cstring>
+#include <ctime>
+#include <vector>
+#include <unordered_map>
+#include <algorithm>
+#include "tzcpp.h"
+
+#include <iostream>
+
+namespace tzcpp {
+
+    namespace {
+        struct ZoneInfoPriv {
+            // data_ contains 7-bytes null-terminated abbreviation and the last byte is dst
+            char data_[8];
+
+            // Zone abbreviation
+            const char* abbr() const {
+                return data_;
+            }
+
+            // Is daylight saving time?
+            bool is_dst() const {
+                return data_[7] != 0;
+            }
+
+            int offset;
+
+            ZoneInfoPriv(int o, const char* a, bool dst = false) : offset(o) {
+                size_t l = std::strlen(a);
+                if (l > 6)
+                    l = 6; // TODO: warning???
+                std::memset(data_, 0, sizeof(data_));
+                std::memcpy(data_, a, l);
+                data_[7] = dst;
+            }
+
+            ZoneInfoPriv(const ZoneInfoPriv&) = default;
+            ZoneInfoPriv(ZoneInfoPriv&&) = default;
+            ZoneInfoPriv& operator = (const ZoneInfoPriv&) = default;
+            ZoneInfoPriv& operator = (ZoneInfoPriv&&) = default;
+        };
+
+        struct TimezoneInfoPriv {
+            size_t info_idx;
+            int64_t time;
+        };
+
+        struct TimezonePriv {
+            size_t begin;
+            size_t end;
+            const char* rule;
+        };
+
+        static std::vector<ZoneInfoPriv> zone_rules = {
+// @ZONE_RULES@
+        };
+
+        static std::vector<TimezoneInfoPriv> zones = {
+// @ZONES@
+        };
+
+        static std::unordered_map<std::string, TimezonePriv> database = {
+// @DATABASE@
+        };
+
+        static std::unordered_map<std::string, std::string> links = {
+// @LINKS@
+        };
+
+        inline auto find_timezone(const char* zone, int64_t t, bool pseudo_local) {
+            auto it = database.find(zone);
+            if (it == database.end()) {
+                auto it2 = links.find(zone);
+                if (it2 == links.end())
+                    return zones.end();
+                it = database.find(it2->second);
+                if (it == database.end())
+                    return zones.end();
+            }
+            auto begin = zones.begin() + it->second.begin;
+            auto end = zones.begin() + it->second.end;
+
+            auto zit = std::lower_bound(begin, end, t, [] (const TimezoneInfoPriv& a, int64_t b) {
+                    return a.time < b;
+            });
+            if (zit == end) // extrapolate
+                return std::prev(zit);
+
+            if (pseudo_local) {
+                while (zit != begin && zit->time + zone_rules[zit->info_idx].offset > t)
+                    --zit;
+            } else {
+                while (zit != begin && zit->time > t)
+                    --zit;
+            }
+
+            return zit;
+        }
+
+    } // anonymous namespace
+
+    bool has_timezone(std::string tz) noexcept {
+        return database.count(tz) || links.count(tz);
+    }
+
+    ZoneInfo get_timezone(std::string zone, int64_t t, bool pseudo_local) noexcept {
+        auto zit = find_timezone(zone.c_str(), t, pseudo_local);
+        if (zit == zones.end())
+            return ZoneInfo{};
+
+        ZoneInfo res;
+        res.offset = zone_rules[zit->info_idx].offset;
+        res.abbr = zone_rules[zit->info_idx].abbr();
+        res.is_dst = zone_rules[zit->info_idx].is_dst();
+
+        return res;
+    }
+
+    const char* version() noexcept {
+        return "@VERSION@";
+    }
+
+    const char* data_version() noexcept {
+        return "@DATA_VERSION@";
+    }
+
+    std::vector<std::string> all_timezones() {
+        std::vector<std::string> res;
+        for (const auto& zone : database)
+            res.push_back(zone.first);
+        for (const auto& link : links)
+            res.push_back(link.first);
+
+        return res;
+    }
+
+    std::vector<std::pair<int64_t, ZoneInfo>> dump_timezone(std::string timezone) {
+        std::vector<std::pair<int64_t, ZoneInfo>> res;
+        const auto& zone = database.at(timezone);
+
+        for (size_t i = zone.begin; i != zone.end; ++i) {
+            res.emplace_back();
+            res.back().first = zones[i].time;
+            res.back().second.offset = zone_rules[zones[i].info_idx].offset;
+            res.back().second.is_dst = zone_rules[zones[i].info_idx].is_dst();
+            res.back().second.abbr = zone_rules[zones[i].info_idx].abbr();
+        }
+
+        return res;
+    }
+
+} // namespace tzcpp
