@@ -72,7 +72,7 @@ int check(bool cond, T&&...args) {
 }
 
 void check_offset(std::string zone, int64_t d, int64_t utcoff, std::string abbr) {
-    auto z = get_timezone(zone, d);
+    auto z = get_zoneinfo(zone, d);
     check(z.offset == utcoff, "invalid offset ", zone, " at ", d, " [", z.offset, " != ", utcoff, "]");
     check(z.abbr == abbr, "invalid abbreviation ", zone, " at ", d, " [", z.abbr, " != ", abbr, "]");
 }

@@ -19,6 +19,7 @@ def build_cpp(version, tz_version, zones, links):
     rules_list = []
     zones_last = 0
     db_list = []
+    timezones_list = []
     rules_map = { }
     rule_names = { }
     def rule_str(t):
@@ -41,12 +42,14 @@ def build_cpp(version, tz_version, zones, links):
         for idx, t in zip(zone["ltidx"], zone["times"]):
             zones_last += 1
             zones_list.append('            { %d, %d },' % (rule_idx(zone["types"][idx]), t))
-        db_list.append('            { "%s", { %d, %d, "%s" }},' % (nm, begin, zones_last, zone["rule"]))
+        db_list.append('            { "%s", %d },' % (nm, len(timezones_list)))
+        timezones_list.append('            { %d, %d, "%s", "%s" },' % (begin, zones_last, zone["rule"], nm))
 
     with open(INPUT_CPP, "rb") as cpp_in:
         cpp_in_source = cpp_in.read()
     cpp_in_source = cpp_in_source.replace("// @ZONE_RULES@", "\n".join(rules_list))
     cpp_in_source = cpp_in_source.replace("// @ZONES@", "\n".join(zones_list))
+    cpp_in_source = cpp_in_source.replace("// @TIMEZONES@", "\n".join(timezones_list))
     cpp_in_source = cpp_in_source.replace("// @DATABASE@", "\n".join(db_list))
     cpp_in_source = cpp_in_source.replace("// @LINKS@", "\n".join([ '            { "%s", "%s" },' % (k, v) for k, v in links.items() ]))
     cpp_in_source = cpp_in_source.replace("@VERSION@", version)

@@ -51,21 +51,26 @@ namespace tzcpp {
             size_t begin;
             size_t end;
             const char* rule;
+            const char* name;
         };
 
-        static std::vector<ZoneInfoPriv> zone_rules = {
+        static const std::vector<ZoneInfoPriv> zone_rules = {
 // @ZONE_RULES@
         };
 
-        static std::vector<TimezoneInfoPriv> zones = {
+        static const std::vector<TimezoneInfoPriv> zones = {
 // @ZONES@
         };
 
-        static std::unordered_map<std::string, TimezonePriv> database = {
+        static const std::vector<TimezonePriv> timezones = {
+// @TIMEZONES@
+        };
+
+        static const std::unordered_map<std::string, size_t> database = {
 // @DATABASE@
         };
 
-        static std::unordered_map<std::string, std::string> links = {
+        static const std::unordered_map<std::string, std::string> links = {
 // @LINKS@
         };
 
@@ -79,8 +84,9 @@ namespace tzcpp {
                 if (it == database.end())
                     return zones.end();
             }
-            auto begin = zones.begin() + it->second.begin;
-            auto end = zones.begin() + it->second.end;
+            const auto& tzdata = timezones[it->second];
+            auto begin = zones.begin() + tzdata.begin;
+            auto end = zones.begin() + tzdata.end;
 
             auto zit = std::lower_bound(begin, end, t, [] (const TimezoneInfoPriv& a, int64_t b) {
                     return a.time < b;
@@ -105,7 +111,7 @@ namespace tzcpp {
         return database.count(tz) || links.count(tz);
     }
 
-    ZoneInfo get_timezone(std::string zone, int64_t t, bool pseudo_local) noexcept {
+    ZoneInfo get_zoneinfo(std::string zone, int64_t t, bool pseudo_local) noexcept {
         auto zit = find_timezone(zone.c_str(), t, pseudo_local);
         if (zit == zones.end())
             return ZoneInfo{};
@@ -138,7 +144,7 @@ namespace tzcpp {
 
     std::vector<std::pair<int64_t, ZoneInfo>> dump_timezone(std::string timezone) {
         std::vector<std::pair<int64_t, ZoneInfo>> res;
-        const auto& zone = database.at(timezone);
+        const auto& zone = timezones[database.at(timezone)];
 
         for (size_t i = zone.begin; i != zone.end; ++i) {
             res.emplace_back();
@@ -149,6 +155,82 @@ namespace tzcpp {
         }
 
         return res;
+    }
+
+    TimeZone::TimeZone() {
+        index_ = std::numeric_limits<size_t>::max();
+    }
+
+    ZoneInfo TimeZone::rule(int64_t t, bool pseudo_local) {
+        if (index_ == std::numeric_limits<size_t>::max()) {
+            return ZoneInfo{};
+        }
+
+        auto begin = zones.begin() + timezones[index_].begin;
+        auto end = zones.begin() + timezones[index_].end;
+
+        auto zit = std::lower_bound(begin, end, t, [] (const TimezoneInfoPriv& a, int64_t b) {
+                return a.time < b;
+        });
+        if (zit == end) { // extrapolate
+            --zit;
+        } else {
+            if (pseudo_local) {
+                while (zit != begin && zit->time + zone_rules[zit->info_idx].offset > t)
+                    --zit;
+            } else {
+                while (zit != begin && zit->time > t)
+                    --zit;
+            }
+        }
+
+        ZoneInfo res;
+        res.offset = zone_rules[zit->info_idx].offset;
+        res.abbr = zone_rules[zit->info_idx].abbr();
+        res.is_dst = zone_rules[zit->info_idx].is_dst();
+
+        return res;
+    }
+
+    std::string TimeZone::rule_name() const {
+        if (index_ == std::numeric_limits<size_t>::max()) {
+            return "";
+        }
+
+        return timezones[index_].rule;
+    }
+
+    size_t TimeZone::size() const {
+        if (index_ == std::numeric_limits<size_t>::max()) {
+            return 0;
+        }
+
+        return timezones[index_].end - timezones[index_].begin;
+    }
+
+    ZoneInfo TimeZone::operator [] (size_t idx) const {
+        const auto& zit = zones[timezones[index_].begin + idx];
+
+        ZoneInfo res;
+        res.offset = zone_rules[zit.info_idx].offset;
+        res.abbr = zone_rules[zit.info_idx].abbr();
+        res.is_dst = zone_rules[zit.info_idx].is_dst();
+
+        return res;
+    }
+
+    TimeZone TimeZone::by_name(std::string nm) {
+        auto it = database.find(nm);
+        if (it != database.end()) {
+            return TimeZone(it->second);
+        }
+
+        auto it2 = links.find(nm);
+        if (it2 != links.end()) {
+            return TimeZone(database.at(it2->second));
+        }
+
+        return TimeZone();
     }
 
 } // namespace tzcpp

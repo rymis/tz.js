@@ -36,11 +36,36 @@ namespace tzcpp {
         }
     };
 
+    class TimeZone {
+        size_t index_;
+        TimeZone(size_t idx) : index_(idx) {
+        }
+    public:
+        TimeZone();
+        // Get rule by utc or pseudo local time:
+        ZoneInfo rule(int64_t, bool pseudo_local = false);
+        // Name of the rule:
+        std::string rule_name() const;
+
+        // Get rules from the array.
+        size_t size() const;
+        // Get nth rule from the array.
+        ZoneInfo operator [] (size_t) const;
+
+        // Search timezone in database. If not found empty timezone is returned.
+        static TimeZone by_name(std::string);
+    };
+
+    // Get timezone class by name.
+    inline TimeZone get_timezone(std::string name) {
+        return TimeZone::by_name(name);
+    }
+
     // Get timezone information from database. If not found returns empty timezone (abbr == nullptr).
     // If pseudo_local == true then function thinks about the time as about the local time converted
     // to seconds since apoch using GMT functions.
     // Current behaviour for ambiguous times is to return last applicable timezone.
-    ZoneInfo get_timezone(std::string, int64_t, bool pseudo_local = false) noexcept;
+    ZoneInfo get_zoneinfo(std::string, int64_t, bool pseudo_local = false) noexcept;
 
     // Get library version as git commit hash:
     const char* version() noexcept;
